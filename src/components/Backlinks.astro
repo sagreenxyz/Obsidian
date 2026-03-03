@@ -1,0 +1,52 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { getNoteTitle } from '../lib/content';
+
+interface Props {
+  notes: CollectionEntry<'vault'>[];
+}
+
+const { notes } = Astro.props;
+---
+
+{notes.length > 0 && (
+  <section class="backlinks">
+    <h2>Backlinks</h2>
+    <ul>
+      {notes.map(note => (
+        <li>
+          <a href={`/${note.slug}`}>{getNoteTitle(note)}</a>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}
+
+<style>
+  .backlinks {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+  }
+  .backlinks h2 {
+    font-size: 1rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.75rem;
+  }
+  .backlinks ul {
+    list-style: none;
+    padding: 0;
+  }
+  .backlinks li {
+    margin-bottom: 0.4rem;
+  }
+  .backlinks a {
+    color: #0066cc;
+    text-decoration: none;
+  }
+  .backlinks a:hover {
+    text-decoration: underline;
+  }
+</style>

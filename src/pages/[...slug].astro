@@ -1,0 +1,42 @@
+---
+import { getCollection } from 'astro:content';
+import { buildBacklinksIndex } from '../lib/obsidian';
+import { getNoteTitle, getBreadcrumbs } from '../lib/content';
+import Base from '../layouts/Base.astro';
+import Backlinks from '../components/Backlinks.astro';
+import TagList from '../components/TagList.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+
+export async function getStaticPaths() {
+  const notes = await getCollection('vault');
+  const backlinks = buildBacklinksIndex(notes);
+
+  return notes.map(note => ({
+    params: { slug: note.slug },
+    props: {
+      note,
+      backlinkSlugs: backlinks.get(note.slug) ?? [],
+      allNotes: notes
+    }
+  }));
+}
+
+const { note, backlinkSlugs, allNotes } = Astro.props;
+const { Content } = await note.render();
+const title = getNoteTitle(note);
+const breadcrumbs = getBreadcrumbs(note.slug);
+
+const backlinkNotes = allNotes.filter(n => backlinkSlugs.includes(n.slug));
+---
+
+<Base title={title} description={note.data.description}>
+  <article>
+    <Breadcrumb crumbs={breadcrumbs} />
+    <h1>{title}</h1>
+    {note.data.tags.length > 0 && <TagList tags={note.data.tags} />}
+    <div class="note-content">
+      <Content />
+    </div>
+    <Backlinks notes={backlinkNotes} />
+  </article>
+</Base>
