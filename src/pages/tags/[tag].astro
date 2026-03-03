@@ -1,0 +1,48 @@
+---
+import { getCollection } from 'astro:content';
+import { getNoteTitle } from '../../lib/content';
+import Base from '../../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const notes = await getCollection('vault');
+  const tagMap = new Map<string, typeof notes>();
+
+  for (const note of notes) {
+    for (const tag of note.data.tags) {
+      const existing = tagMap.get(tag) ?? [];
+      tagMap.set(tag, [...existing, note]);
+    }
+  }
+
+  return [...tagMap.entries()].map(([tag, tagNotes]) => ({
+    params: { tag },
+    props: { tag, tagNotes }
+  }));
+}
+
+const { tag, tagNotes } = Astro.props;
+---
+
+<Base title={`Tag: #${tag}`}>
+  <article>
+    <h1>#{tag}</h1>
+    <p>{tagNotes.length} note{tagNotes.length !== 1 ? 's' : ''} tagged with <strong>#{tag}</strong></p>
+    <ul>
+      {tagNotes.map(note => (
+        <li>
+          <a href={`/${note.slug}`}>{getNoteTitle(note)}</a>
+        </li>
+      ))}
+    </ul>
+    <p><a href="/">← Back to home</a></p>
+  </article>
+</Base>
+
+<style>
+  h1 { margin-bottom: 0.5rem; }
+  p { color: #555; margin-bottom: 1.5rem; }
+  ul { list-style: none; padding: 0; margin-bottom: 1.5rem; }
+  li { padding: 0.4rem 0; }
+  li a { color: #0066cc; text-decoration: none; }
+  li a:hover { text-decoration: underline; }
+</style>

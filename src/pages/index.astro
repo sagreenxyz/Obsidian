@@ -1,0 +1,73 @@
+---
+import { getCollection } from 'astro:content';
+import { getNoteTitle } from '../lib/content';
+import Base from '../layouts/Base.astro';
+
+const notes = await getCollection('vault');
+
+// Group notes by top-level folder
+const grouped = new Map<string, typeof notes>();
+for (const note of notes) {
+  const folder = note.slug.split('/')[0];
+  const existing = grouped.get(folder) ?? [];
+  grouped.set(folder, [...existing, note]);
+}
+
+const sortedFolders = [...grouped.keys()].sort();
+---
+
+<Base title="Knowledge Garden" description="A personal knowledge garden built with Obsidian and Astro.">
+  <h1>🌿 Knowledge Garden</h1>
+  <p>All notes, organized by folder.</p>
+
+  {sortedFolders.map(folder => (
+    <section class="folder-group">
+      <h2>{folder.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</h2>
+      <ul>
+        {(grouped.get(folder) ?? []).map(note => (
+          <li>
+            <a href={`/${note.slug}`}>{getNoteTitle(note)}</a>
+            {note.data.tags.length > 0 && (
+              <span class="tags">
+                {note.data.tags.map(tag => (
+                  <a href={`/tags/${tag}`} class="tag">#{tag}</a>
+                ))}
+              </span>
+            )}
+            {note.data.created && (
+              <span class="date">{note.data.created.toISOString().split('T')[0]}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  ))}
+</Base>
+
+<style>
+  h1 { margin-bottom: 0.5rem; }
+  p { color: #666; margin-bottom: 2rem; }
+  .folder-group { margin-bottom: 2rem; }
+  .folder-group h2 {
+    font-size: 1.25rem;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.25rem;
+    margin-bottom: 0.75rem;
+    text-transform: capitalize;
+  }
+  ul { list-style: none; padding: 0; }
+  li { padding: 0.4rem 0; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  li a:first-child { color: #0066cc; text-decoration: none; font-weight: 500; }
+  li a:first-child:hover { text-decoration: underline; }
+  .tags { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+  .tag {
+    padding: 0.1rem 0.4rem;
+    background: #f0f0f0;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    text-decoration: none;
+    color: #555;
+  }
+  .tag:hover { background: #e0e0e0; }
+  .date { font-size: 0.8rem; color: #888; margin-left: auto; }
+</style>
