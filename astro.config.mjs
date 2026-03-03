@@ -18,8 +18,8 @@ function copyAttachments() {
 }
 
 export default defineConfig({
-  site: 'https://YOUR_USERNAME.github.io',   // Replace with your GitHub username
-  base: '/YOUR_REPO_NAME',                   // Replace with your repository name
+  site: 'https://sagreenxyz.github.io',
+  base: '/Obsidian',
   vite: { plugins: [copyAttachments()] },
   markdown: {
     remarkPlugins: [
