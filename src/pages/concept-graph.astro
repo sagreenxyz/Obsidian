@@ -1,0 +1,323 @@
+---
+import conceptGraph from '../../vault/concept-graph.json';
+
+// Build domain → colour mapping from the data
+const domains = [...new Set(conceptGraph.nodes.map((n: { domain: string }) => n.domain))].sort();
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nursing Concept Dependency Graph | Knowledge Garden</title>
+    <meta name="description" content="Interactive dependency graph of nursing concepts derived from pharmacology textbook chapter summaries." />
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: system-ui, sans-serif;
+        background: #f8f9fa;
+        color: #333;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 0.75rem 1.5rem;
+        background: #fff;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      header a { color: #0066cc; text-decoration: none; font-weight: bold; font-size: 0.9rem; }
+      header h1 { font-size: 1.15rem; flex: 1; }
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        font-size: 0.85rem;
+      }
+      .controls label { display: flex; align-items: center; gap: 0.3rem; }
+      .controls select, .controls input[type="text"] {
+        padding: 0.25rem 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 0.85rem;
+      }
+      #graph-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+      }
+      svg {
+        width: 100%;
+        height: 100%;
+        cursor: grab;
+      }
+      svg:active { cursor: grabbing; }
+      .node circle {
+        stroke: #fff;
+        stroke-width: 1.5px;
+        cursor: pointer;
+      }
+      .node text {
+        font-size: 10px;
+        pointer-events: none;
+        paint-order: stroke fill;
+        stroke: #fff;
+        stroke-width: 3px;
+      }
+      .link {
+        fill: none;
+        stroke: #aaa;
+        stroke-opacity: 0.5;
+        stroke-width: 1.5px;
+      }
+      .link.ambiguous {
+        stroke-dasharray: 5, 3;
+        stroke: #f0a500;
+      }
+      .link-arrow { fill: #aaa; }
+      .node.highlighted circle { stroke: #e05; stroke-width: 3px; }
+      .node.faded circle { opacity: 0.15; }
+      .node.faded text { opacity: 0.15; }
+      .link.faded { opacity: 0.05; }
+      #tooltip {
+        position: absolute;
+        background: rgba(0,0,0,0.82);
+        color: #fff;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        pointer-events: none;
+        max-width: 260px;
+        display: none;
+        z-index: 10;
+        line-height: 1.5;
+      }
+      .legend {
+        position: absolute;
+        bottom: 1rem;
+        right: 1rem;
+        background: rgba(255,255,255,0.92);
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 0.6rem 0.8rem;
+        font-size: 0.75rem;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .legend h4 { margin-bottom: 0.4rem; font-size: 0.8rem; }
+      .legend-item { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; }
+      .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/">🌿 Knowledge Garden</a>
+      <h1>Nursing Concept Dependency Graph</h1>
+      <div class="controls">
+        <label>
+          Domain:
+          <select id="domain-filter">
+            <option value="">All domains</option>
+            {domains.map((d: string) => <option value={d}>{d}</option>)}
+          </select>
+        </label>
+        <label>
+          Search:
+          <input type="text" id="node-search" placeholder="e.g. Analgesic" />
+        </label>
+        <label>
+          <input type="checkbox" id="show-ambiguous" checked /> Show ambiguous edges
+        </label>
+      </div>
+    </header>
+
+    <div id="graph-container">
+      <svg id="graph-svg"></svg>
+      <div id="tooltip"></div>
+      <div class="legend" id="legend">
+        <h4>Domains</h4>
+      </div>
+    </div>
+
+    <script type="module">
+      import * as d3 from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
+
+      const graphData = {JSON.stringify(conceptGraph)};
+
+      // Domain colour palette
+      const domainList = [...new Set(graphData.nodes.map(n => n.domain))].sort();
+      const colorScale = d3.scaleOrdinal(d3.schemeTableau10.concat(d3.schemePastel1)).domain(domainList);
+
+      // Populate legend
+      const legend = document.getElementById('legend');
+      domainList.forEach(domain => {
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        item.innerHTML = `<span class="legend-dot" style="background:${colorScale(domain)}"></span>${domain}`;
+        legend.appendChild(item);
+      });
+
+      // Graph dimensions
+      const container = document.getElementById('graph-container');
+      const svg = d3.select('#graph-svg');
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      // Arrow marker
+      const defs = svg.append('defs');
+      defs.append('marker')
+        .attr('id', 'arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 18)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('d', 'M0,-5L10,0L0,5')
+        .attr('fill', '#aaa');
+
+      const g = svg.append('g');
+
+      // Zoom & pan
+      svg.call(d3.zoom()
+        .scaleExtent([0.1, 4])
+        .on('zoom', e => g.attr('transform', e.transform)));
+
+      let nodes = graphData.nodes.map(n => ({ ...n }));
+      let edges = graphData.edges.map(e => ({ ...e }));
+
+      function buildGraph(domainFilter, showAmbiguous) {
+        g.selectAll('*').remove();
+
+        const filteredNodes = domainFilter
+          ? nodes.filter(n => n.domain === domainFilter)
+          : nodes;
+        const nodeIds = new Set(filteredNodes.map(n => n.id));
+
+        const filteredEdges = edges.filter(e =>
+          nodeIds.has(e.from) && nodeIds.has(e.to) &&
+          (showAmbiguous || !e.ambiguous)
+        );
+
+        const simulation = d3.forceSimulation(filteredNodes)
+          .force('link', d3.forceLink(filteredEdges)
+            .id(d => d.id)
+            .distance(90))
+          .force('charge', d3.forceManyBody().strength(-220))
+          .force('center', d3.forceCenter(width / 2, height / 2))
+          .force('collide', d3.forceCollide(22));
+
+        const link = g.append('g')
+          .selectAll('line')
+          .data(filteredEdges)
+          .join('line')
+          .attr('class', d => 'link' + (d.ambiguous ? ' ambiguous' : ''))
+          .attr('marker-end', 'url(#arrow)');
+
+        const node = g.append('g')
+          .selectAll('.node')
+          .data(filteredNodes)
+          .join('g')
+          .attr('class', 'node')
+          .call(d3.drag()
+            .on('start', (event, d) => {
+              if (!event.active) simulation.alphaTarget(0.3).restart();
+              d.fx = d.x; d.fy = d.y;
+            })
+            .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+            .on('end', (event, d) => {
+              if (!event.active) simulation.alphaTarget(0);
+              d.fx = null; d.fy = null;
+            }));
+
+        node.append('circle')
+          .attr('r', 12)
+          .attr('fill', d => colorScale(d.domain));
+
+        node.append('text')
+          .attr('dy', 22)
+          .attr('text-anchor', 'middle')
+          .text(d => d.label.length > 22 ? d.label.slice(0, 20) + '…' : d.label);
+
+        // Tooltip
+        const tooltip = document.getElementById('tooltip');
+        node.on('mouseover', (event, d) => {
+          const prereqs = filteredEdges
+            .filter(e => e.to === d.id)
+            .map(e => filteredNodes.find(n => n.id === e.from)?.label ?? e.from);
+          const dependents = filteredEdges
+            .filter(e => e.from === d.id)
+            .map(e => filteredNodes.find(n => n.id === e.to)?.label ?? e.to);
+          tooltip.style.display = 'block';
+          tooltip.style.left = (event.offsetX + 14) + 'px';
+          tooltip.style.top = (event.offsetY - 8) + 'px';
+          tooltip.innerHTML =
+            `<strong>${d.label}</strong><br>` +
+            `Domain: ${d.domain}<br>` +
+            `Chapters: ${d.chapters.join(', ')}<br>` +
+            (prereqs.length ? `<br>Prerequisites:<br>• ${prereqs.join('<br>• ')}` : '') +
+            (dependents.length ? `<br>Enables:<br>• ${dependents.join('<br>• ')}` : '');
+
+          // Highlight neighbours
+          const connected = new Set([d.id,
+            ...filteredEdges.filter(e => e.from === d.id || e.to === d.id)
+              .flatMap(e => [e.from, e.to])]);
+          node.classed('highlighted', n => n.id === d.id);
+          node.classed('faded', n => !connected.has(n.id));
+          link.classed('faded', e => e.from !== d.id && e.to !== d.id);
+        }).on('mousemove', event => {
+          tooltip.style.left = (event.offsetX + 14) + 'px';
+          tooltip.style.top = (event.offsetY - 8) + 'px';
+        }).on('mouseout', () => {
+          tooltip.style.display = 'none';
+          node.classed('highlighted faded', false);
+          link.classed('faded', false);
+        });
+
+        simulation.on('tick', () => {
+          link
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+          node.attr('transform', d => `translate(${d.x},${d.y})`);
+        });
+
+        return simulation;
+      }
+
+      let sim = buildGraph('', true);
+
+      // Domain filter
+      document.getElementById('domain-filter').addEventListener('change', e => {
+        sim.stop();
+        sim = buildGraph(e.target.value, document.getElementById('show-ambiguous').checked);
+      });
+
+      // Ambiguous toggle
+      document.getElementById('show-ambiguous').addEventListener('change', e => {
+        sim.stop();
+        sim = buildGraph(document.getElementById('domain-filter').value, e.target.checked);
+      });
+
+      // Search highlight
+      document.getElementById('node-search').addEventListener('input', e => {
+        const q = e.target.value.trim().toLowerCase();
+        const nodeEls = d3.selectAll('.node');
+        if (!q) {
+          nodeEls.classed('highlighted faded', false);
+          return;
+        }
+        nodeEls.classed('highlighted', d => d.label.toLowerCase().includes(q));
+        nodeEls.classed('faded', d => !d.label.toLowerCase().includes(q));
+      });
+    </script>
+  </body>
+</html>
