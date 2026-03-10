@@ -28,12 +28,16 @@ const { title, description } = Astro.props;
         padding: 1rem 0;
         border-bottom: 1px solid #eee;
         margin-bottom: 2rem;
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
       }
       nav a {
         text-decoration: none;
         color: #0066cc;
         font-weight: bold;
       }
+      nav a:hover { text-decoration: underline; }
       footer {
         margin-top: 3rem;
         padding-top: 1rem;
@@ -54,6 +58,7 @@ const { title, description } = Astro.props;
   <body>
     <nav>
       <a href="/">🌿 Knowledge Garden</a>
+      <a href="/graph" style="font-weight:500;color:#555;font-size:0.9rem;">🔬 Concept Graph</a>
     </nav>
     <main>
       <slot />
