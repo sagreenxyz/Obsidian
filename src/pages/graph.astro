@@ -1,0 +1,965 @@
+---
+import { getCollection } from 'astro:content';
+import { buildGraphData } from '../lib/graph';
+
+const notes = await getCollection('vault');
+const graphData = buildGraphData(notes);
+const graphJson = JSON.stringify(graphData);
+const totalNotes = notes.length;
+const totalEdges = graphData.edges.length;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Concept Dependency Graph | Knowledge Garden</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: system-ui, sans-serif;
+        background: #0d1117;
+        color: #e6edf3;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* ── Top Nav ─────────────────────────────────── */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.6rem 1.2rem;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        flex-shrink: 0;
+        z-index: 10;
+      }
+      header a {
+        color: #58a6ff;
+        text-decoration: none;
+        font-size: 0.875rem;
+      }
+      header a:hover { text-decoration: underline; }
+      header h1 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #e6edf3;
+        flex: 1;
+      }
+      .stats {
+        font-size: 0.75rem;
+        color: #8b949e;
+        display: flex;
+        gap: 1rem;
+      }
+      .stat-badge {
+        background: #21262d;
+        border: 1px solid #30363d;
+        border-radius: 1rem;
+        padding: 0.2rem 0.6rem;
+      }
+
+      /* ── Layout ──────────────────────────────────── */
+      #app {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      /* ── Sidebar ─────────────────────────────────── */
+      #sidebar {
+        width: 280px;
+        min-width: 280px;
+        background: #161b22;
+        border-right: 1px solid #30363d;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        z-index: 5;
+      }
+
+      .sidebar-section {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #21262d;
+      }
+      .sidebar-section h2 {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #8b949e;
+        margin-bottom: 0.5rem;
+      }
+
+      /* Search */
+      #search {
+        width: 100%;
+        padding: 0.4rem 0.7rem;
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        color: #e6edf3;
+        font-size: 0.85rem;
+        outline: none;
+      }
+      #search:focus { border-color: #388bfd; }
+
+      /* Category filters */
+      .filter-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0;
+        cursor: pointer;
+        user-select: none;
+        font-size: 0.82rem;
+        color: #c9d1d9;
+      }
+      .filter-item input[type="checkbox"] { cursor: pointer; accent-color: #58a6ff; }
+      .color-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .filter-count {
+        margin-left: auto;
+        font-size: 0.7rem;
+        color: #8b949e;
+        background: #21262d;
+        border-radius: 1rem;
+        padding: 0.1rem 0.4rem;
+      }
+
+      /* Edge type legend */
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.2rem 0;
+        font-size: 0.78rem;
+        color: #8b949e;
+      }
+      .legend-line {
+        width: 24px;
+        height: 2px;
+        flex-shrink: 0;
+      }
+
+      /* Controls */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        border: 1px solid #30363d;
+        background: #21262d;
+        color: #c9d1d9;
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 0.4rem;
+        transition: background 0.15s;
+      }
+      .btn:hover { background: #30363d; }
+      .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+      .btn:disabled:hover { background: #21262d; }
+      .btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+      .btn.primary:hover { background: #388bfd; }
+      .btn.success { background: #196c2e; border-color: #238636; color: #3fb950; }
+      .btn.success:hover { background: #238636; }
+
+      /* Node info panel */
+      #node-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      #node-info .empty-state {
+        padding: 1.5rem 1rem;
+        color: #8b949e;
+        font-size: 0.82rem;
+        text-align: center;
+        line-height: 1.6;
+      }
+      .node-panel {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #21262d;
+      }
+      .node-panel h3 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #e6edf3;
+        margin-bottom: 0.4rem;
+        line-height: 1.3;
+      }
+      .node-panel .category-badge {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        border-radius: 1rem;
+        font-size: 0.7rem;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+        color: #fff;
+      }
+      .node-panel .description {
+        font-size: 0.78rem;
+        color: #8b949e;
+        margin-bottom: 0.5rem;
+        line-height: 1.5;
+      }
+      .node-panel .connection-info {
+        font-size: 0.75rem;
+        color: #8b949e;
+        margin-bottom: 0.5rem;
+      }
+      .related-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .related-list li {
+        font-size: 0.75rem;
+        padding: 0.2rem 0;
+        color: #58a6ff;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .related-list li:hover { text-decoration: underline; }
+      .related-list li::before { content: '→ '; color: #8b949e; }
+      .prereq-list li::before { content: '⬆ '; color: #f85149; }
+
+      /* Progress */
+      .progress-bar-wrap {
+        background: #21262d;
+        border-radius: 4px;
+        height: 6px;
+        margin: 0.4rem 0;
+        overflow: hidden;
+      }
+      .progress-bar-fill {
+        height: 100%;
+        background: #3fb950;
+        border-radius: 4px;
+        transition: width 0.3s ease;
+      }
+      .progress-text {
+        font-size: 0.75rem;
+        color: #8b949e;
+      }
+
+      /* ── Graph Canvas ─────────────────────────────── */
+      #canvas-wrap {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        background: #0d1117;
+      }
+
+      #graph-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: grab;
+      }
+      #graph-canvas:active { cursor: grabbing; }
+
+      /* SVG elements */
+      .link {
+        stroke-opacity: 0.5;
+        fill: none;
+      }
+      .link-sequential { stroke: #30363d; stroke-width: 1px; }
+      .link-wikilink { stroke: #388bfd; stroke-width: 1.5px; }
+      .link-prerequisite { stroke: #f85149; stroke-width: 2px; }
+
+      .node-circle {
+        stroke: #0d1117;
+        stroke-width: 2px;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .node-circle:hover { stroke: #e6edf3; stroke-width: 2.5px; }
+      .node-circle.studied { stroke: #3fb950; stroke-width: 3px; }
+      .node-circle.selected { stroke: #f0a500; stroke-width: 3px; }
+      .node-circle.highlighted { stroke: #f0a500; stroke-width: 2px; }
+      .node-circle.dimmed { opacity: 0.15; }
+
+      .node-label {
+        font-size: 9px;
+        fill: #8b949e;
+        pointer-events: none;
+        user-select: none;
+      }
+      .node-label.visible { fill: #c9d1d9; }
+
+      /* Tooltip */
+      #tooltip {
+        position: fixed;
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 0.6rem 0.8rem;
+        font-size: 0.78rem;
+        color: #c9d1d9;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+        max-width: 220px;
+        z-index: 100;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      }
+      #tooltip.visible { opacity: 1; }
+      #tooltip .tt-title { font-weight: 600; color: #e6edf3; margin-bottom: 0.25rem; }
+      #tooltip .tt-category { font-size: 0.7rem; color: #8b949e; margin-bottom: 0.25rem; }
+      #tooltip .tt-connections { font-size: 0.7rem; color: #8b949e; }
+
+      /* Mini-map hint */
+      .canvas-hint {
+        position: absolute;
+        bottom: 1rem;
+        right: 1rem;
+        font-size: 0.7rem;
+        color: #484f58;
+        pointer-events: none;
+        user-select: none;
+        line-height: 1.6;
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/">← Knowledge Garden</a>
+      <h1>🔬 Concept Dependency Graph</h1>
+      <div class="stats">
+        <span class="stat-badge">{totalNotes} concepts</span>
+        <span class="stat-badge">{totalEdges} connections</span>
+      </div>
+    </header>
+
+    <div id="app">
+      <!-- ── Sidebar ── -->
+      <aside id="sidebar">
+        <!-- Search -->
+        <div class="sidebar-section">
+          <h2>Search</h2>
+          <input type="text" id="search" placeholder="Search concepts…" autocomplete="off" />
+        </div>
+
+        <!-- Category filters -->
+        <div class="sidebar-section">
+          <h2>Categories</h2>
+          <label class="filter-item" data-cat="pharmacology">
+            <input type="checkbox" checked />
+            <span class="color-dot" style="background:#1a7bbf"></span>
+            Pharmacology
+            <span class="filter-count" id="count-pharmacology">0</span>
+          </label>
+          <label class="filter-item" data-cat="drug-calculations">
+            <input type="checkbox" checked />
+            <span class="color-dot" style="background:#7b2fbf"></span>
+            Drug Calculations
+            <span class="filter-count" id="count-drug-calculations">0</span>
+          </label>
+          <label class="filter-item" data-cat="essays">
+            <input type="checkbox" checked />
+            <span class="color-dot" style="background:#bf7b1a"></span>
+            Essays
+            <span class="filter-count" id="count-essays">0</span>
+          </label>
+          <label class="filter-item" data-cat="topics">
+            <input type="checkbox" checked />
+            <span class="color-dot" style="background:#1abf7b"></span>
+            Topics
+            <span class="filter-count" id="count-topics">0</span>
+          </label>
+          <label class="filter-item" data-cat="general">
+            <input type="checkbox" checked />
+            <span class="color-dot" style="background:#888"></span>
+            Other
+            <span class="filter-count" id="count-general">0</span>
+          </label>
+        </div>
+
+        <!-- Edge type legend -->
+        <div class="sidebar-section">
+          <h2>Edge Types</h2>
+          <div class="legend-item">
+            <div class="legend-line" style="background:#30363d"></div>
+            Sequential chapters
+          </div>
+          <div class="legend-item">
+            <div class="legend-line" style="background:#388bfd"></div>
+            Wikilink reference
+          </div>
+          <div class="legend-item">
+            <div class="legend-line" style="background:#f85149; height:3px"></div>
+            Prerequisite (must study first)
+          </div>
+        </div>
+
+        <!-- Study progress -->
+        <div class="sidebar-section">
+          <h2>Study Progress</h2>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+          </div>
+          <div class="progress-text" id="progress-text">0 / {totalNotes} studied</div>
+        </div>
+
+        <!-- Controls -->
+        <div class="sidebar-section">
+          <h2>Controls</h2>
+          <button class="btn" id="btn-reset-zoom">⟳ Reset View</button>
+          <button class="btn" id="btn-highlight-prereqs" disabled>⬆ Highlight Prerequisites</button>
+          <button class="btn" id="btn-highlight-dependents" disabled>⬇ What This Unlocks</button>
+          <button class="btn" id="btn-mark-studied" disabled>✓ Mark as Studied</button>
+          <button class="btn" id="btn-reset-progress">↺ Reset Progress</button>
+        </div>
+
+        <!-- Node info panel -->
+        <div id="node-info">
+          <div class="empty-state">
+            Click any node to see<br />concept details &amp; connections.<br /><br />
+            🔵 Drag nodes to rearrange<br />
+            🖱 Scroll to zoom<br />
+            ⌨ Type to search
+          </div>
+        </div>
+      </aside>
+
+      <!-- ── Graph Canvas ── -->
+      <div id="canvas-wrap">
+        <svg id="graph-canvas"></svg>
+        <div class="canvas-hint">
+          Scroll to zoom · Drag to pan<br />
+          Click node for details
+        </div>
+      </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip">
+      <div class="tt-title" id="tt-title"></div>
+      <div class="tt-category" id="tt-category"></div>
+      <div class="tt-connections" id="tt-connections"></div>
+    </div>
+
+    <!-- Graph data injected at build time -->
+    <script id="graph-data" type="application/json" set:html={graphJson}></script>
+
+    <script>
+    import * as d3 from 'd3';
+      // ── Data ──────────────────────────────────────────────────────────────
+      const graphData = JSON.parse(document.getElementById('graph-data').textContent || '{}');
+      const allNodes = graphData.nodes || [];
+      const allEdges = graphData.edges || [];
+
+      // ── Configuration constants ───────────────────────────────────────────
+      const NODE_RADIUS_MIN = 7;
+      const NODE_RADIUS_MAX = 22;
+      const NODE_RADIUS_BASE = 5;
+      const NODE_RADIUS_SCALE = 2.5;
+      const SIM_CHARGE_STRENGTH = -220;
+      const SIM_LINK_DIST_SEQUENTIAL = 70;
+      const SIM_LINK_DIST_PREREQUISITE = 100;
+      const SIM_LINK_DIST_WIKILINK = 120;
+      const SIM_LINK_STRENGTH_SEQUENTIAL = 0.8;
+      const SIM_LINK_STRENGTH_DEFAULT = 0.4;
+      const SIM_ALPHA_DECAY = 0.03;
+
+      // ── Category colours ─────────────────────────────────────────────────
+      const COLORS = {
+        'pharmacology': '#1a7bbf',
+        'drug-calculations': '#7b2fbf',
+        'essays': '#bf7b1a',
+        'topics': '#1abf7b',
+        'general': '#888888',
+      };
+
+      // ── State ─────────────────────────────────────────────────────────────
+      let activeCategories = new Set(['pharmacology', 'drug-calculations', 'essays', 'topics', 'general']);
+      let searchQuery = '';
+      let selectedNodeId = null;
+      let studiedNodes = new Set(JSON.parse(localStorage.getItem('studied-nodes') || '[]'));
+
+      // ── DOM refs ─────────────────────────────────────────────────────────
+      const tooltip = document.getElementById('tooltip');
+      const ttTitle = document.getElementById('tt-title');
+      const ttCategory = document.getElementById('tt-category');
+      const ttConnections = document.getElementById('tt-connections');
+      const nodeInfoPanel = document.getElementById('node-info');
+      const searchInput = document.getElementById('search');
+      const btnResetZoom = document.getElementById('btn-reset-zoom');
+      const btnHighlightPrereqs = document.getElementById('btn-highlight-prereqs');
+      const btnHighlightDeps = document.getElementById('btn-highlight-dependents');
+      const btnMarkStudied = document.getElementById('btn-mark-studied');
+      const btnResetProgress = document.getElementById('btn-reset-progress');
+      const progressFill = document.getElementById('progress-fill');
+      const progressText = document.getElementById('progress-text');
+
+      // ── SVG setup ────────────────────────────────────────────────────────
+      const canvasWrap = document.getElementById('canvas-wrap');
+      const svg = d3.select('#graph-canvas');
+      let W = canvasWrap.clientWidth;
+      let H = canvasWrap.clientHeight;
+      svg.attr('width', W).attr('height', H);
+
+      // Arrow markers
+      const defs = svg.append('defs');
+      ['sequential', 'wikilink', 'prerequisite'].forEach(type => {
+        const color = type === 'prerequisite' ? '#f85149' : type === 'wikilink' ? '#388bfd' : '#30363d';
+        defs.append('marker')
+          .attr('id', `arrow-${type}`)
+          .attr('viewBox', '0 -5 10 10')
+          .attr('refX', 22)
+          .attr('refY', 0)
+          .attr('markerWidth', 5)
+          .attr('markerHeight', 5)
+          .attr('orient', 'auto')
+          .append('path')
+          .attr('d', 'M0,-5L10,0L0,5')
+          .attr('fill', color);
+      });
+
+      // Zoom
+      const zoomBehavior = d3.zoom()
+        .scaleExtent([0.05, 5])
+        .on('zoom', event => g.attr('transform', event.transform));
+      svg.call(zoomBehavior);
+
+      const g = svg.append('g');
+      const edgesG = g.append('g').attr('class', 'edges-layer');
+      const nodesG = g.append('g').attr('class', 'nodes-layer');
+      const labelsG = g.append('g').attr('class', 'labels-layer');
+
+      // ── Simulation ───────────────────────────────────────────────────────
+      // Clone node/edge data so D3 can mutate it
+      const simNodes = allNodes.map(d => Object.assign({}, d));
+      const simEdges = allEdges.map(d => Object.assign({}, d));
+
+      // O(1) node lookup by id
+      const simNodeById = new Map(simNodes.map(n => [n.id, n]));
+
+      /** Normalise a D3 source/target which may be an object or a string id. */
+      function nodeId(nodeOrId) {
+        return typeof nodeOrId === 'object' ? nodeOrId.id : nodeOrId;
+      }
+
+      const simulation = d3.forceSimulation(simNodes)
+        .force('link', d3.forceLink(simEdges)
+          .id(d => d.id)
+          .distance(d =>
+            d.type === 'sequential' ? SIM_LINK_DIST_SEQUENTIAL :
+            d.type === 'prerequisite' ? SIM_LINK_DIST_PREREQUISITE :
+            SIM_LINK_DIST_WIKILINK)
+          .strength(d => d.type === 'sequential' ? SIM_LINK_STRENGTH_SEQUENTIAL : SIM_LINK_STRENGTH_DEFAULT))
+        .force('charge', d3.forceManyBody().strength(SIM_CHARGE_STRENGTH))
+        .force('center', d3.forceCenter(W / 2, H / 2))
+        .force('collision', d3.forceCollide(d => nodeRadius(d) + 6))
+        .alphaDecay(SIM_ALPHA_DECAY);
+
+      // ── Helpers ──────────────────────────────────────────────────────────
+      function nodeRadius(d) {
+        return Math.max(NODE_RADIUS_MIN, Math.min(NODE_RADIUS_MAX, NODE_RADIUS_BASE + d.connectionCount * NODE_RADIUS_SCALE));
+      }
+
+      function nodeColor(d) {
+        if (studiedNodes.has(d.id)) return '#3fb950';
+        return COLORS[d.category] || COLORS['general'];
+      }
+
+      function isVisible(d) {
+        if (!activeCategories.has(d.category)) return false;
+        if (!searchQuery) return true;
+        return d.title.toLowerCase().includes(searchQuery) ||
+          (d.tags && d.tags.some(t => t.toLowerCase().includes(searchQuery)));
+      }
+
+      // ── Draw ─────────────────────────────────────────────────────────────
+      const link = edgesG.selectAll('line')
+        .data(simEdges)
+        .join('line')
+        .attr('class', d => `link link-${d.type}`)
+        .attr('marker-end', d => `url(#arrow-${d.type})`);
+
+      const node = nodesG.selectAll('circle')
+        .data(simNodes)
+        .join('circle')
+        .attr('class', 'node-circle')
+        .attr('r', nodeRadius)
+        .attr('fill', nodeColor)
+        .on('mouseover', onMouseOver)
+        .on('mousemove', onMouseMove)
+        .on('mouseout', onMouseOut)
+        .on('click', onNodeClick)
+        .call(d3.drag()
+          .on('start', dragStart)
+          .on('drag', dragged)
+          .on('end', dragEnd));
+
+      const label = labelsG.selectAll('text')
+        .data(simNodes)
+        .join('text')
+        .attr('class', 'node-label')
+        .text(d => {
+          const t = d.title;
+          return t.length > 22 ? t.slice(0, 21) + '…' : t;
+        })
+        .attr('dx', d => nodeRadius(d) + 3)
+        .attr('dy', 3);
+
+      // ── Tick ─────────────────────────────────────────────────────────────
+      simulation.on('tick', () => {
+        link
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+        node
+          .attr('cx', d => d.x)
+          .attr('cy', d => d.y);
+        label
+          .attr('x', d => d.x)
+          .attr('y', d => d.y)
+          .style('display', d => (isVisible(d) && d.connectionCount >= 2) ? 'block' : 'none');
+      });
+
+      // ── Drag ─────────────────────────────────────────────────────────────
+      function dragStart(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x; d.fy = d.y;
+      }
+      function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+      function dragEnd(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      }
+
+      // ── Tooltip ──────────────────────────────────────────────────────────
+      function onMouseOver(event, d) {
+        if (!isVisible(d)) return;
+        ttTitle.textContent = d.title;
+        ttCategory.textContent = d.subcategory || d.category;
+        const conn = d.connectionCount;
+        ttConnections.textContent = `${conn} connection${conn !== 1 ? 's' : ''}${studiedNodes.has(d.id) ? ' · ✓ Studied' : ''}`;
+        tooltip.classList.add('visible');
+        positionTooltip(event);
+      }
+      function onMouseMove(event) { positionTooltip(event); }
+      function onMouseOut() { tooltip.classList.remove('visible'); }
+      function positionTooltip(event) {
+        const x = event.clientX + 14;
+        const y = event.clientY - 10;
+        const tw = tooltip.offsetWidth;
+        const th = tooltip.offsetHeight;
+        tooltip.style.left = (x + tw > window.innerWidth ? x - tw - 28 : x) + 'px';
+        tooltip.style.top  = (y + th > window.innerHeight ? y - th : y) + 'px';
+      }
+
+      // ── Node selection ───────────────────────────────────────────────────
+      function onNodeClick(event, d) {
+        event.stopPropagation();
+        selectedNodeId = d.id;
+        updateSelection();
+        renderNodePanel(d);
+        btnHighlightPrereqs.disabled = false;
+        btnHighlightDeps.disabled = false;
+        btnMarkStudied.disabled = false;
+        btnMarkStudied.textContent = studiedNodes.has(d.id) ? '✗ Unmark Studied' : '✓ Mark as Studied';
+        btnMarkStudied.className = studiedNodes.has(d.id) ? 'btn' : 'btn success';
+      }
+
+      svg.on('click', () => {
+        selectedNodeId = null;
+        updateSelection();
+        nodeInfoPanel.innerHTML = '<div class="empty-state">Click any node to see<br />concept details &amp; connections.</div>';
+        btnHighlightPrereqs.disabled = true;
+        btnHighlightDeps.disabled = true;
+        btnMarkStudied.disabled = true;
+      });
+
+      function updateSelection() {
+        node
+          .classed('selected', d => d.id === selectedNodeId)
+          .classed('dimmed', false)
+          .classed('highlighted', false);
+        link.style('stroke-opacity', null);
+      }
+
+      // ── Node panel ───────────────────────────────────────────────────────
+      function renderNodePanel(d) {
+        // Find direct prerequisites (nodes that MUST be studied first)
+        const prereqs = simEdges
+          .filter(e => nodeId(e.target) === d.id && e.type === 'prerequisite')
+          .map(e => simNodeById.get(nodeId(e.source)));
+        const sequentialPrereqs = simEdges
+          .filter(e => nodeId(e.target) === d.id && e.type === 'sequential')
+          .map(e => simNodeById.get(nodeId(e.source)));
+        // Find what this unlocks
+        const unlocks = simEdges
+          .filter(e => nodeId(e.source) === d.id && (e.type === 'prerequisite' || e.type === 'sequential'))
+          .map(e => simNodeById.get(nodeId(e.target)));
+        // Wikilinks
+        const related = simEdges
+          .filter(e => (nodeId(e.source) === d.id || nodeId(e.target) === d.id) && e.type === 'wikilink')
+          .map(e => simNodeById.get(nodeId(e.source) === d.id ? nodeId(e.target) : nodeId(e.source)));
+
+        const catColor = COLORS[d.category] || COLORS['general'];
+        const isStudied = studiedNodes.has(d.id);
+
+        let html = `
+          <div class="node-panel">
+            <span class="category-badge" style="background:${catColor}">${d.subcategory || d.category}</span>
+            <h3>${escHtml(d.title)}</h3>
+            ${d.description ? `<p class="description">${escHtml(d.description)}</p>` : ''}
+            <div class="connection-info">
+              ${d.connectionCount} connection${d.connectionCount !== 1 ? 's' : ''}
+              ${d.chapterNum !== null ? ` · Chapter ${d.chapterNum}` : ''}
+              ${isStudied ? ' · <span style="color:#3fb950">✓ Studied</span>' : ''}
+            </div>
+            <a href="/${d.slug}" style="display:inline-block;margin-top:0.4rem;font-size:0.78rem;color:#58a6ff;">Open note →</a>
+          </div>`;
+
+        if (prereqs.length > 0 || sequentialPrereqs.length > 0) {
+          const allPrereqs = [...prereqs, ...sequentialPrereqs];
+          html += `
+            <div class="node-panel">
+              <h2 style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#f85149;margin-bottom:.4rem">Study First ⬆</h2>
+              <ul class="related-list prereq-list">
+                ${allPrereqs.slice(0, 5).map(n =>
+                  `<li onclick="focusNode('${n.id}')">${escHtml(n.title)}</li>`
+                ).join('')}
+                ${allPrereqs.length > 5 ? `<li style="color:#8b949e">… +${allPrereqs.length - 5} more</li>` : ''}
+              </ul>
+            </div>`;
+        }
+
+        if (unlocks.length > 0) {
+          html += `
+            <div class="node-panel">
+              <h2 style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#8b949e;margin-bottom:.4rem">Unlocks ⬇</h2>
+              <ul class="related-list">
+                ${unlocks.slice(0, 5).map(n =>
+                  `<li onclick="focusNode('${n.id}')">${escHtml(n.title)}</li>`
+                ).join('')}
+                ${unlocks.length > 5 ? `<li style="color:#8b949e">… +${unlocks.length - 5} more</li>` : ''}
+              </ul>
+            </div>`;
+        }
+
+        if (related.length > 0) {
+          html += `
+            <div class="node-panel">
+              <h2 style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#388bfd;margin-bottom:.4rem">Related</h2>
+              <ul class="related-list">
+                ${related.slice(0, 4).map(n =>
+                  `<li onclick="focusNode('${n.id}')">${escHtml(n.title)}</li>`
+                ).join('')}
+              </ul>
+            </div>`;
+        }
+
+        nodeInfoPanel.innerHTML = html;
+      }
+
+      // ── Focus node from panel click ───────────────────────────────────────
+      window.focusNode = function (id) {
+        const d = simNodeById.get(id);
+        if (!d) return;
+        selectedNodeId = id;
+        updateSelection();
+        renderNodePanel(d);
+        // Pan to node
+        const scale = 1.4;
+        svg.transition().duration(600)
+          .call(zoomBehavior.transform, d3.zoomIdentity.translate(W / 2 - d.x * scale, H / 2 - d.y * scale).scale(scale));
+        btnHighlightPrereqs.disabled = false;
+        btnHighlightDeps.disabled = false;
+        btnMarkStudied.disabled = false;
+        btnMarkStudied.textContent = studiedNodes.has(id) ? '✗ Unmark Studied' : '✓ Mark as Studied';
+        btnMarkStudied.className = studiedNodes.has(id) ? 'btn' : 'btn success';
+      };
+
+      // ── Highlight helpers ─────────────────────────────────────────────────
+      function getAncestors(id) {
+        const visited = new Set();
+        const queue = [id];
+        while (queue.length) {
+          const cur = queue.shift();
+          if (visited.has(cur)) continue;
+          visited.add(cur);
+          simEdges
+            .filter(e => nodeId(e.target) === cur && (e.type === 'prerequisite' || e.type === 'sequential'))
+            .forEach(e => queue.push(nodeId(e.source)));
+        }
+        return visited;
+      }
+
+      function getDescendants(id) {
+        const visited = new Set();
+        const queue = [id];
+        while (queue.length) {
+          const cur = queue.shift();
+          if (visited.has(cur)) continue;
+          visited.add(cur);
+          simEdges
+            .filter(e => nodeId(e.source) === cur && (e.type === 'prerequisite' || e.type === 'sequential'))
+            .forEach(e => queue.push(nodeId(e.target)));
+        }
+        return visited;
+      }
+
+      btnHighlightPrereqs.addEventListener('click', () => {
+        if (!selectedNodeId) return;
+        const ancestors = getAncestors(selectedNodeId);
+        node
+          .classed('highlighted', d => ancestors.has(d.id) && d.id !== selectedNodeId)
+          .classed('dimmed', d => !ancestors.has(d.id) && d.id !== selectedNodeId);
+        link.style('stroke-opacity', e => {
+          const s = nodeId(e.source);
+          const t = nodeId(e.target);
+          return (ancestors.has(s) && ancestors.has(t)) ? '0.8' : '0.05';
+        });
+      });
+
+      btnHighlightDeps.addEventListener('click', () => {
+        if (!selectedNodeId) return;
+        const descendants = getDescendants(selectedNodeId);
+        node
+          .classed('highlighted', d => descendants.has(d.id) && d.id !== selectedNodeId)
+          .classed('dimmed', d => !descendants.has(d.id) && d.id !== selectedNodeId);
+        link.style('stroke-opacity', e => {
+          const s = nodeId(e.source);
+          const t = nodeId(e.target);
+          return (descendants.has(s) && descendants.has(t)) ? '0.8' : '0.05';
+        });
+      });
+
+      // ── Filters ───────────────────────────────────────────────────────────
+      function applyFilters() {
+        node
+          .style('display', d => isVisible(d) ? null : 'none')
+          .classed('dimmed', false)
+          .classed('highlighted', false);
+        label.style('display', d =>
+          (isVisible(d) && d.connectionCount >= 2) ? null : 'none');
+        link.style('display', e => {
+          const sv = simNodeById.get(nodeId(e.source));
+          const tv = simNodeById.get(nodeId(e.target));
+          return (sv && isVisible(sv) && tv && isVisible(tv)) ? null : 'none';
+        });
+        simulation.alpha(0.3).restart();
+      }
+
+      document.querySelectorAll('.filter-item input[type="checkbox"]').forEach(cb => {
+        const cat = cb.closest('.filter-item').dataset.cat;
+        cb.addEventListener('change', () => {
+          if (cb.checked) activeCategories.add(cat);
+          else activeCategories.delete(cat);
+          applyFilters();
+        });
+      });
+
+      // Category counts
+      for (const cat of ['pharmacology', 'drug-calculations', 'essays', 'topics', 'general']) {
+        const el = document.getElementById(`count-${cat}`);
+        if (el) el.textContent = String(allNodes.filter(n => n.category === cat).length);
+      }
+
+      // Search
+      searchInput.addEventListener('input', e => {
+        searchQuery = e.target.value.toLowerCase().trim();
+        applyFilters();
+      });
+
+      // ── Reset zoom ────────────────────────────────────────────────────────
+      btnResetZoom.addEventListener('click', () => {
+        svg.transition().duration(600)
+          .call(zoomBehavior.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(0.7));
+      });
+
+      // ── Mark studied ─────────────────────────────────────────────────────
+      btnMarkStudied.addEventListener('click', () => {
+        if (!selectedNodeId) return;
+        if (studiedNodes.has(selectedNodeId)) {
+          studiedNodes.delete(selectedNodeId);
+          btnMarkStudied.textContent = '✓ Mark as Studied';
+          btnMarkStudied.className = 'btn success';
+        } else {
+          studiedNodes.add(selectedNodeId);
+          btnMarkStudied.textContent = '✗ Unmark Studied';
+          btnMarkStudied.className = 'btn';
+        }
+        localStorage.setItem('studied-nodes', JSON.stringify([...studiedNodes]));
+        node.attr('fill', nodeColor)
+          .classed('studied', d => studiedNodes.has(d.id));
+        updateProgress();
+        // Re-render panel to update studied status
+        const d = simNodeById.get(selectedNodeId);
+        if (d) renderNodePanel(d);
+      });
+
+      btnResetProgress.addEventListener('click', () => {
+        if (!confirm('Reset all study progress?')) return;
+        studiedNodes.clear();
+        localStorage.removeItem('studied-nodes');
+        node.attr('fill', nodeColor).classed('studied', false);
+        updateProgress();
+      });
+
+      function updateProgress() {
+        const total = allNodes.length;
+        const done = allNodes.filter(n => studiedNodes.has(n.id)).length;
+        const pct = total > 0 ? (done / total * 100).toFixed(0) : 0;
+        progressFill.style.width = pct + '%';
+        progressText.textContent = `${done} / ${total} studied`;
+      }
+      updateProgress();
+      // Apply initial studied state
+      node.classed('studied', d => studiedNodes.has(d.id));
+
+      // ── Auto-fit after simulation settles ────────────────────────────────
+      simulation.on('end', () => {
+        // Compute bounding box of all nodes
+        const xs = simNodes.map(d => d.x);
+        const ys = simNodes.map(d => d.y);
+        const x0 = Math.min(...xs), x1 = Math.max(...xs);
+        const y0 = Math.min(...ys), y1 = Math.max(...ys);
+        const padding = 60;
+        const scaleX = (W - padding * 2) / (x1 - x0 || 1);
+        const scaleY = (H - padding * 2) / (y1 - y0 || 1);
+        const scale = Math.min(scaleX, scaleY, 1.2);
+        const tx = W / 2 - scale * (x0 + x1) / 2;
+        const ty = H / 2 - scale * (y0 + y1) / 2;
+        svg.transition().duration(800)
+          .call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+      });
+
+      // ── Resize ────────────────────────────────────────────────────────────
+      window.addEventListener('resize', () => {
+        W = canvasWrap.clientWidth;
+        H = canvasWrap.clientHeight;
+        svg.attr('width', W).attr('height', H);
+        simulation.force('center', d3.forceCenter(W / 2, H / 2)).alpha(0.3).restart();
+      });
+
+      // ── Util ──────────────────────────────────────────────────────────────
+      function escHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+    </script>
+  </body>
+</html>
